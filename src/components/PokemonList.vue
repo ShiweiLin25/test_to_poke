@@ -62,16 +62,15 @@
 import { ref, onMounted, computed } from "vue";
 import axios from "axios";
 
-// 是否顯示加載動畫
-const isLoading = ref(true);
 
-const pokemons = ref([]);
+const isLoading = ref(true);// 是否顯示加載動畫
+const pokemons = ref([]);// 存放寶可夢的基本資訊
 const selectedPokemon = ref(null);
-const searchQuery = ref("");
-const typeFilter = ref("");
-const typeCounts = ref({});
+const searchQuery = ref(""); // 搜尋框的輸入內容
+const typeFilter = ref(""); // 選擇的寶可夢類型篩選器
+const typeCounts = ref({}); // 儲存每種類型的寶可夢數量
 
-// 屬性類型翻譯
+// 固定的屬性類型對照表
 const typeTranslations = {
   "normal": "一般",
   "fire": "火",
@@ -93,7 +92,7 @@ const typeTranslations = {
   "fairy": "妖精"
 };
 
-// 圖鑑地區翻譯
+// 地區圖鑑名稱的翻譯對照表
 const pokedexTranslations = {
   "kanto": "關都",
   "johto": "城都",
@@ -108,16 +107,44 @@ const pokedexTranslations = {
   "national": "全國"
 };
 
+// 取得寶可夢的基本資料
 const fetchPokemons = async () => {
   try {
     const response = await axios.get("https://pokeapi.co/api/v2/pokemon?limit=1008");
+    const pokemonList = await Promise.all(response.data.results.map(async (poke, index) => {
+      const pokemonData = {
+        id: index + 1,
+        name: poke.name,
+        image: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${index + 1}.png`,
+        url: poke.url
+      };
 
-    pokemons.value = response.data.results.map((poke, index) => ({
-      id: index + 1,
-      name: poke.name,
-      image: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${index + 1}.png`,
-      url: poke.url
+      // 取得寶可夢詳細資料以獲得中文名稱
+      const pokemonDetail = await axios.get(poke.url);
+      const speciesResponse = await axios.get(pokemonDetail.data.species.url);
+
+      // 取得中文名稱
+      const chineseName = speciesResponse.data.names.find(name => name.language.name === "zh-Hant")?.name || poke.name;
+
+      return {
+        ...pokemonData,
+        chineseName, // 儲存中文名稱
+        types: pokemonDetail.data.types.map(t => t.type.name) // 儲存寶可夢的類型
+      };
     }));
+
+    pokemons.value = pokemonList;
+
+    // 計算每種類型的數量
+    const counts = {};
+    pokemonList.forEach(pokemon => {
+      pokemon.types.forEach(type => {
+        counts[type] = counts[type] ? counts[type] + 1 : 1;
+      });
+    });
+
+    typeCounts.value = counts;
+
   } catch (error) {
     console.error("獲取寶可夢資料時發生錯誤:", error);
   } finally {
@@ -127,26 +154,39 @@ const fetchPokemons = async () => {
   }
 };
 
+// 依據搜尋關鍵字和類型過濾寶可夢
 const filteredPokemons = computed(() => {
   return pokemons.value.filter(pokemon => {
     const query = searchQuery.value.toLowerCase().trim();
-    return pokemon.name.toLowerCase().includes(query) || pokemon.id.toString().includes(query);
+    const matchesSearchQuery = pokemon.name.toLowerCase().includes(query) ||
+      pokemon.id.toString().includes(query) ||
+      pokemon.chineseName.toLowerCase().includes(query);
+
+    const matchesTypeFilter = typeFilter.value ? pokemon.types.includes(typeFilter.value) : true;
+
+    return matchesSearchQuery && matchesTypeFilter;
   });
 });
 
 const openModal = async (pokemon) => {
-  selectedPokemon.value = { ...pokemon, loading: true };
+  selectedPokemon.value = pokemon;
 
   try {
     const response = await axios.get(pokemon.url);
     const speciesResponse = await axios.get(response.data.species.url);
 
+    // 取得中文名稱
     const chineseName = speciesResponse.data.names.find(name => name.language.name === "zh-Hant")?.name || pokemon.name;
+
+    // 取得地區圖鑑資料
     const regionalPokedex = speciesResponse.data.pokedex_numbers.find(entry => entry.pokedex.name !== "national");
+
+    // 如果沒有其他地區圖鑑，則使用第一個地區圖鑑
     const regionalDexName = regionalPokedex ? (pokedexTranslations[regionalPokedex.pokedex.name] || "未知") : "未知";
 
+    // 更新選中寶可夢的詳細資訊
     selectedPokemon.value = {
-      ...pokemon,
+      ...selectedPokemon.value,
       name: chineseName,
       types: response.data.types.map(t => typeTranslations[t.type.name] || t.type.name).join(", "),
       height: (response.data.height / 10).toFixed(1),
