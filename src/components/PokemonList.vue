@@ -1,19 +1,22 @@
 <template>
   <div class="container">
+    <!-- 加載中的畫面，當資料還在加載時顯示 -->
     <div v-if="isLoading" class="loading-screen">
       <img src="/image/ball.png" alt="載入中" class="loading-image">
     </div>
+
     <!-- 圖鑑標題（圖片） -->
     <div class="text-center my-4">
       <img src="/image/pokemon.png" alt="寶可夢圖鑑" class="img-fluid" style="width: 40%; height: auto;" />
     </div>
 
-    <!-- 搜尋欄位 + 類型過濾器 -->
+    <!-- 搜尋框和類型過濾器 -->
     <div class="mb-3">
       <div class="input-group">
         <input v-model="searchQuery" type="text" class="form-control w-75" placeholder="搜尋寶可夢（名稱、編號）" />
         <select v-model="typeFilter" class="form-select">
           <option value="">所有類型</option>
+          <!-- 顯示所有類型的過濾選項，以及每種類型的寶可夢數量 -->
           <option v-for="(label, type) in typeTranslations" :key="type" :value="type">
             {{ label }} ({{ typeCounts[type] || 0 }})
           </option>
@@ -21,9 +24,8 @@
       </div>
     </div>
 
-    <!-- 使用 Bootstrap 的 row 來建立網格佈局 -->
+    <!-- 使用 Bootstrap 的 row 來建立網格佈局，顯示每隻寶可夢 -->
     <div class="row">
-      <!-- 透過 v-for 迴圈遍歷過濾後的 pokemons 陣列，每個寶可夢顯示為一張卡片 -->
       <div v-for="pokemon in filteredPokemons" :key="pokemon.id" class="col-xl-2 col-lg-3 col-md-4 col-6 mb-3">
         <div class="card" @click="openModal(pokemon)">
           <!-- 顯示寶可夢圖片 -->
@@ -35,26 +37,41 @@
       </div>
     </div>
 
-    <!-- Bootstrap Modal，顯示選中的寶可夢詳細資料 -->
+    <!-- 顯示選中寶可夢的詳細資訊的 Modal -->
     <div v-if="selectedPokemon" class="modal fade show d-block" tabindex="-1">
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title">{{ selectedPokemon.name }}</h5>
+            <h4 class="modal-title"><strong>{{ selectedPokemon.name }}</strong></h4>
             <button type="button" class="btn-close" @click="closeModal"></button>
           </div>
-          <div class="modal-body text-center">
-            <img :src="selectedPokemon.image" class="img-fluid w-50 mb-3" :alt="selectedPokemon.name">
-            <p><strong>編號：</strong> {{ selectedPokemon.id }}</p>
-            <p><strong>屬型：</strong> {{ selectedPokemon.types }}</p>
-            <p><strong>身高：</strong> {{ selectedPokemon.height }} m</p>
-            <p><strong>體重：</strong> {{ selectedPokemon.weight }} kg</p>
-            <p><strong>地區：</strong> {{ selectedPokemon.regionalDex }}</p>
-            <p><strong>描述：</strong> {{ selectedPokemon.description }}</p>
+          <hr class="hr-line">
+          <div class="modal-body">
+            <!-- 使用 flexbox 實現圖片和文字並排 -->
+            <div class="pokemon-details">
+              <!-- 圖片部分 -->
+              <div class="pokemon-image">
+                <img :src="selectedPokemon.image" class="img-fluid mb-3 rounded" :alt="selectedPokemon.name">
+              </div>
+              <!-- 文字部分 -->
+              <div class="pokemon-info">
+                <p><strong>編號：</strong> {{ selectedPokemon.id }}</p>
+                <p><strong>屬型：</strong> {{ selectedPokemon.types }}</p>
+                <p><strong>身高：</strong> {{ selectedPokemon.height }} m</p>
+                <p><strong>體重：</strong> {{ selectedPokemon.weight }} kg</p>
+                <p><strong>地區：</strong> {{ selectedPokemon.regionalDex }}</p>
+              </div>
+            </div>
+            <hr class="hr-line">
+            <!-- 描述部分，放置於下方 -->
+            <div class="pokemon-description">
+              <p><strong>描述：</strong> {{ selectedPokemon.description }}</p>
+            </div>
           </div>
         </div>
       </div>
     </div>
+
   </div>
 </template>
 
@@ -62,15 +79,25 @@
 import { ref, onMounted, computed } from "vue";
 import axios from "axios";
 
+// 定義變數來控制加載狀態
+const isLoading = ref(true);
 
-const isLoading = ref(true);// 是否顯示加載動畫
-const pokemons = ref([]);// 存放寶可夢的基本資訊
+// 存放寶可夢基本資訊的陣列
+const pokemons = ref([]);
+
+// 存放選中寶可夢的詳細資料
 const selectedPokemon = ref(null);
-const searchQuery = ref(""); // 搜尋框的輸入內容
-const typeFilter = ref(""); // 選擇的寶可夢類型篩選器
-const typeCounts = ref({}); // 儲存每種類型的寶可夢數量
 
-// 固定的屬性類型對照表
+// 搜尋框的輸入內容
+const searchQuery = ref("");
+
+// 類型過濾器選擇的值
+const typeFilter = ref("");
+
+// 儲存每種類型的寶可夢數量
+const typeCounts = ref({});
+
+// 類型名稱的翻譯
 const typeTranslations = {
   "normal": "一般",
   "fire": "火",
@@ -107,67 +134,81 @@ const pokedexTranslations = {
   "national": "全國"
 };
 
-// 取得寶可夢的基本資料
+// 獲取寶可夢基本資料的函式
 const fetchPokemons = async () => {
   try {
+    // 透過 API 獲取寶可夢的基本資料
     const response = await axios.get("https://pokeapi.co/api/v2/pokemon?limit=1008");
-    const pokemonList = await Promise.all(response.data.results.map(async (poke, index) => {
-      const pokemonData = {
-        id: index + 1,
-        name: poke.name,
-        image: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${index + 1}.png`,
-        url: poke.url
-      };
-
-      // 取得寶可夢詳細資料以獲得中文名稱
-      const pokemonDetail = await axios.get(poke.url);
-      const speciesResponse = await axios.get(pokemonDetail.data.species.url);
-
-      // 取得中文名稱
-      const chineseName = speciesResponse.data.names.find(name => name.language.name === "zh-Hant")?.name || poke.name;
-
-      return {
-        ...pokemonData,
-        chineseName, // 儲存中文名稱
-        types: pokemonDetail.data.types.map(t => t.type.name) // 儲存寶可夢的類型
-      };
+    const pokemonList = response.data.results.map((poke, index) => ({
+      id: index + 1,
+      name: poke.name,
+      image: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${index + 1}.png`,
+      url: poke.url,
+      types: []
     }));
 
-    pokemons.value = pokemonList;
+    // 同時請求所有寶可夢的詳細資料
+    const detailsResponses = await Promise.allSettled(pokemonList.map(p => axios.get(p.url)));
 
-    // 計算每種類型的數量
-    const counts = {};
-    pokemonList.forEach(pokemon => {
-      pokemon.types.forEach(type => {
-        counts[type] = counts[type] ? counts[type] + 1 : 1;
+    // 同時請求所有寶可夢的物種資料
+    const speciesResponses = await Promise.allSettled(pokemonList.map(p => axios.get(`https://pokeapi.co/api/v2/pokemon-species/${p.id}/`)));
+
+
+    // 計算每種類型的寶可夢數量
+    const typeCountMap = {};
+
+    // 更新寶可夢的基本資料
+    pokemons.value = pokemonList.map((pokemon, index) => {
+      const detailsData = detailsResponses[index]?.value?.data || {};
+      const speciesData = speciesResponses[index]?.value?.data || {};
+
+      const pokemonTypes = detailsData.types?.map(t => t.type.name) || [];
+
+      // 更新類型計數
+      pokemonTypes.forEach(type => {
+        if (!typeCountMap[type]) {
+          typeCountMap[type] = 0;
+        }
+        typeCountMap[type]++;
       });
+
+      return {
+        ...pokemon,
+        chineseName: speciesData.names?.find(n => n.language.name === "zh-Hant")?.name || pokemon.name,
+        types: pokemonTypes
+      };
     });
 
-    typeCounts.value = counts;
+    // 更新類型計數
+    typeCounts.value = typeCountMap;
 
   } catch (error) {
     console.error("獲取寶可夢資料時發生錯誤:", error);
   } finally {
-    setTimeout(() => {
-      isLoading.value = false; // 過 1.5 秒再隱藏動畫，讓過渡更順暢
-    }, 1500);
+    // 資料加載完成後，隱藏加載動畫
+    isLoading.value = false;
   }
 };
 
-// 依據搜尋關鍵字和類型過濾寶可夢
+// 根據搜尋關鍵字和類型過濾寶可夢
 const filteredPokemons = computed(() => {
   return pokemons.value.filter(pokemon => {
     const query = searchQuery.value.toLowerCase().trim();
-    const matchesSearchQuery = pokemon.name.toLowerCase().includes(query) ||
+    const matchesSearchQuery =
+      pokemon.name.toLowerCase().includes(query) ||
       pokemon.id.toString().includes(query) ||
-      pokemon.chineseName.toLowerCase().includes(query);
+      (pokemon.chineseName?.toLowerCase() || "").includes(query);
 
-    const matchesTypeFilter = typeFilter.value ? pokemon.types.includes(typeFilter.value) : true;
+    // 確保符合類型過濾條件
+    const matchesTypeFilter = typeFilter.value
+      ? pokemon.types.includes(typeFilter.value)
+      : true;
 
     return matchesSearchQuery && matchesTypeFilter;
   });
 });
 
+// 開啟模態窗口顯示寶可夢詳細資料
 const openModal = async (pokemon) => {
   selectedPokemon.value = pokemon;
 
@@ -175,13 +216,8 @@ const openModal = async (pokemon) => {
     const response = await axios.get(pokemon.url);
     const speciesResponse = await axios.get(response.data.species.url);
 
-    // 取得中文名稱
     const chineseName = speciesResponse.data.names.find(name => name.language.name === "zh-Hant")?.name || pokemon.name;
-
-    // 取得地區圖鑑資料
     const regionalPokedex = speciesResponse.data.pokedex_numbers.find(entry => entry.pokedex.name !== "national");
-
-    // 如果沒有其他地區圖鑑，則使用第一個地區圖鑑
     const regionalDexName = regionalPokedex ? (pokedexTranslations[regionalPokedex.pokedex.name] || "未知") : "未知";
 
     // 更新選中寶可夢的詳細資訊
@@ -194,6 +230,7 @@ const openModal = async (pokemon) => {
       regionalDex: regionalDexName,
       description: speciesResponse.data.flavor_text_entries.find(entry => entry.language.name === "zh-Hant")?.flavor_text.replace(/\n/g, " ") ||
         speciesResponse.data.flavor_text_entries.find(entry => entry.language.name === "zh")?.flavor_text.replace(/\n/g, " ") ||
+        speciesResponse.data.flavor_text_entries.find(entry => entry.language.name === "en")?.flavor_text.replace(/\n/g, " ") ||
         "無描述"
     };
   } catch (error) {
@@ -201,14 +238,17 @@ const openModal = async (pokemon) => {
   }
 };
 
+// 關閉模態窗口
 const closeModal = () => {
   selectedPokemon.value = null;
 };
 
+// 組件加載時獲取寶可夢資料
 onMounted(fetchPokemons);
 </script>
 
 <style scoped>
+/* 卡片效果，當鼠標懸停時放大 */
 .card {
   text-align: center;
   transition: transform 0.3s;
@@ -218,15 +258,13 @@ onMounted(fetchPokemons);
   transform: scale(1.05);
 }
 
-/* 模態背景透明，並加上模糊效果 */
+/* 模態背景透明並加上模糊效果 */
 .modal.fade.show.d-block {
   background-color: rgba(0, 0, 0, 0.6);
-  /* 背景透明並加上黑色背景 */
   backdrop-filter: blur(5px);
-  /* 背景模糊 */
 }
 
-/* 🌀 加載動畫畫面 */
+/* 加載動畫樣式 */
 .loading-screen {
   position: fixed;
   top: 0;
@@ -234,7 +272,6 @@ onMounted(fetchPokemons);
   width: 100%;
   height: 100vh;
   background-color: white;
-  /* 可改為其他背景色 */
   display: flex;
   justify-content: center;
   align-items: center;
@@ -242,13 +279,13 @@ onMounted(fetchPokemons);
   transition: opacity 0.5s ease-out;
 }
 
+/* 旋轉動畫 */
 .loading-image {
   width: 150px;
   height: auto;
   animation: spin 2s linear infinite;
 }
 
-/* 旋轉動畫 */
 @keyframes spin {
   from {
     transform: rotate(0deg);
@@ -257,5 +294,75 @@ onMounted(fetchPokemons);
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Modal 樣式 */
+.modal-content {
+  border-radius: 15px;
+  padding: 20px;
+}
+
+/* 使用 flexbox 排版圖片和文字 */
+.pokemon-details {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+  /* 給圖片和右側信息一點間距 */
+}
+
+/* 圖片樣式，確保背景透明 */
+.pokemon-image {
+  flex: 0 0 50%;
+  /* 圖片佔據 40% 的寬度 */
+  text-align: center;
+}
+
+img.img-fluid {
+  max-width: 100%;
+}
+
+/* 右側文字區域樣式 */
+.pokemon-info {
+  flex: 1;
+  /* 文字區域佔據剩餘空間 */
+  padding-top: 15px;
+  padding-left: 35px;
+}
+
+.pokemon-info p {
+  font-size: 1.1rem;
+  line-height: 1.6;
+  margin: 8px 0;
+}
+
+/* 描述文字樣式 */
+.pokemon-description p {
+  font-size: 1.1rem;
+  line-height: 1.6;
+  margin-top: 20px;
+  text-align: left;
+}
+
+/* 標題樣式 */
+.modal-header {
+  border-bottom: none;
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #333;
+}
+
+.modal-body {
+  font-family: 'Arial', sans-serif;
+}
+
+/* 強調的文字樣式 */
+.pokemon-info strong,
+.pokemon-description strong {
+  color: #5e5e5e;
+}
+
+.hr-line {
+  border: 1px #333 solid;
 }
 </style>
